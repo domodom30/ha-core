@@ -8,6 +8,8 @@ from aiomealie import (
     Mealplan,
     MealplanResponse,
     Recipe,
+    RecipeFavoritesResponse,
+    RecipeRating,
     RecipesResponse,
     ShoppingItemsResponse,
     ShoppingListsResponse,
@@ -80,6 +82,22 @@ def mock_mealie_client() -> Generator[AsyncMock]:
         client.random_mealplan.return_value = mealplan
         client.set_mealplan.return_value = mealplan
         client.update_mealplan.return_value = mealplan
+        client.get_recipe_favorites.return_value = RecipeFavoritesResponse(
+            ratings=[
+                RecipeRating(
+                    recipe_id="recipe-1",
+                    recipe_slug="pizza-recipe",
+                    is_favorite=True,
+                    rating=5.0,
+                ),
+                RecipeRating(
+                    recipe_id="recipe-2",
+                    recipe_slug="soup-recipe",
+                    is_favorite=False,
+                    rating=2.0,
+                ),
+            ]
+        )
         yield client
 
 

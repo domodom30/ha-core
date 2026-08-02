@@ -1,4 +1,16 @@
 # serializer version: 1
+# name: test_service_get_recipe_favorites
+  dict({
+    'favorites': list([
+      dict({
+        'is_favorite': True,
+        'rating': 5.0,
+        'recipe_id': 'recipe-1',
+        'recipe_slug': 'pizza-recipe',
+      }),
+    ]),
+  })
+# ---
 # name: test_service_get_recipes[service_data0]
   dict({
     'recipes': dict({

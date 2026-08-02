@@ -21,7 +21,9 @@ from homeassistant.components.mealie.const import (
     ATTR_MEALPLAN_ID,
     ATTR_NOTE_TEXT,
     ATTR_NOTE_TITLE,
+    ATTR_RATING,
     ATTR_RECIPE_ID,
+    ATTR_RECIPE_SLUG,
     ATTR_RESULT_LIMIT,
     ATTR_SEARCH_TERMS,
     ATTR_START_DATE,
@@ -29,12 +31,16 @@ from homeassistant.components.mealie.const import (
     DOMAIN,
 )
 from homeassistant.components.mealie.services import (
+    SERVICE_ADD_RECIPE_FAVORITE,
     SERVICE_DELETE_MEALPLAN,
     SERVICE_GET_MEALPLAN,
     SERVICE_GET_RECIPE,
+    SERVICE_GET_RECIPE_FAVORITES,
     SERVICE_GET_RECIPES,
     SERVICE_GET_SHOPPING_LIST_ITEMS,
     SERVICE_IMPORT_RECIPE,
+    SERVICE_RATE_RECIPE,
+    SERVICE_REMOVE_RECIPE_FAVORITE,
     SERVICE_SET_MEALPLAN,
     SERVICE_SET_RANDOM_MEALPLAN,
     SERVICE_UPDATE_MEALPLAN,
@@ -492,6 +498,78 @@ async def test_service_delete_mealplan(
     mock_mealie_client.delete_mealplan.assert_called_with(1)
 
 
+async def test_service_get_recipe_favorites(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Test the get_recipe_favorites service returns only favorites."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_GET_RECIPE_FAVORITES,
+        {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id},
+        blocking=True,
+        return_response=True,
+    )
+    assert response == snapshot
+
+
+@pytest.mark.parametrize(
+    ("service", "function"),
+    [
+        (SERVICE_ADD_RECIPE_FAVORITE, "add_recipe_favorite"),
+        (SERVICE_REMOVE_RECIPE_FAVORITE, "remove_recipe_favorite"),
+    ],
+)
+async def test_service_recipe_favorite(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    service: str,
+    function: str,
+) -> None:
+    """Test the add/remove recipe favorite services."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        service,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_RECIPE_SLUG: "pizza-recipe",
+        },
+        blocking=True,
+    )
+    getattr(mock_mealie_client, function).assert_called_with("pizza-recipe")
+
+
+async def test_service_rate_recipe(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test the rate_recipe service."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RATE_RECIPE,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_RECIPE_SLUG: "pizza-recipe",
+            ATTR_RATING: 4.5,
+        },
+        blocking=True,
+    )
+    mock_mealie_client.rate_recipe.assert_called_with("pizza-recipe", rating=4.5)
+
+
 @pytest.mark.parametrize(
     ("service", "payload", "function", "exception", "raised_exception", "message"),
     [
@@ -597,6 +675,14 @@ async def test_service_delete_mealplan(
             ServiceValidationError,
             "Mealplan with ID `1` not found",
         ),
+        (
+            SERVICE_GET_RECIPE_FAVORITES,
+            {},
+            "get_recipe_favorites",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
     ],
 )
 async def test_services_connection_error(
@@ -644,6 +730,46 @@ async def test_services_connection_error(
             MealieNotFoundError,
             ServiceValidationError,
             "Mealplan with ID `1` not found",
+        ),
+        (
+            SERVICE_ADD_RECIPE_FAVORITE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe"},
+            "add_recipe_favorite",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_ADD_RECIPE_FAVORITE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe"},
+            "add_recipe_favorite",
+            MealieNotFoundError,
+            ServiceValidationError,
+            "Recipe with ID or slug `pizza-recipe` not found",
+        ),
+        (
+            SERVICE_REMOVE_RECIPE_FAVORITE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe"},
+            "remove_recipe_favorite",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_RATE_RECIPE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 4.5},
+            "rate_recipe",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_RATE_RECIPE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 4.5},
+            "rate_recipe",
+            MealieNotFoundError,
+            ServiceValidationError,
+            "Recipe with ID or slug `pizza-recipe` not found",
         ),
     ],
 )
@@ -705,6 +831,7 @@ async def test_services_without_response_error(
                 ATTR_RECIPE_ID: "recipe_id",
             },
         ),
+        (SERVICE_GET_RECIPE_FAVORITES, {}),
     ],
 )
 async def test_service_entry_availability(

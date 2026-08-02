@@ -20,6 +20,8 @@ ATTR_NOTE_TEXT = "note_text"
 ATTR_SEARCH_TERMS = "search_terms"
 ATTR_RESULT_LIMIT = "result_limit"
 ATTR_MEALPLAN_ID = "mealplan_id"
+ATTR_RECIPE_SLUG = "recipe_slug"
+ATTR_RATING = "rating"
 
 MIN_REQUIRED_MEALIE_VERSION = AwesomeVersion("v2.0.0")
 
