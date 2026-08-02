@@ -23,15 +23,18 @@ from homeassistant.components.mealie.const import (
     ATTR_NOTE_TITLE,
     ATTR_RATING,
     ATTR_RECIPE_ID,
+    ATTR_RECIPE_INCREMENT_QUANTITY,
     ATTR_RECIPE_SLUG,
     ATTR_RESULT_LIMIT,
     ATTR_SEARCH_TERMS,
+    ATTR_SHOPPING_LIST_ID,
     ATTR_START_DATE,
     ATTR_URL,
     DOMAIN,
 )
 from homeassistant.components.mealie.services import (
     SERVICE_ADD_RECIPE_FAVORITE,
+    SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
     SERVICE_DELETE_MEALPLAN,
     SERVICE_GET_MEALPLAN,
     SERVICE_GET_RECIPE,
@@ -570,6 +573,34 @@ async def test_service_rate_recipe(
     mock_mealie_client.rate_recipe.assert_called_with("pizza-recipe", rating=4.5)
 
 
+async def test_service_add_recipe_to_shopping_list(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Test the add_recipe_to_shopping_list service."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_SHOPPING_LIST_ID: "shopping-list-id",
+            ATTR_RECIPE_ID: "recipe-id",
+            ATTR_RECIPE_INCREMENT_QUANTITY: 2,
+        },
+        blocking=True,
+        return_response=True,
+    )
+    assert response == snapshot
+    mock_mealie_client.add_recipe_to_shopping_list.assert_called_with(
+        "shopping-list-id", "recipe-id", scale=2
+    )
+
+
 @pytest.mark.parametrize(
     ("service", "payload", "function", "exception", "raised_exception", "message"),
     [
@@ -682,6 +713,30 @@ async def test_service_rate_recipe(
             MealieConnectionError,
             HomeAssistantError,
             "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+            {ATTR_SHOPPING_LIST_ID: "list-id", ATTR_RECIPE_ID: "recipe_id"},
+            "add_recipe_to_shopping_list",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+            {ATTR_SHOPPING_LIST_ID: "list-id", ATTR_RECIPE_ID: "recipe_id"},
+            "add_recipe_to_shopping_list",
+            MealieNotFoundError,
+            ServiceValidationError,
+            "Shopping list or recipe not found",
+        ),
+        (
+            SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+            {ATTR_SHOPPING_LIST_ID: "list-id", ATTR_RECIPE_ID: "recipe_id"},
+            "add_recipe_to_shopping_list",
+            MealieValidationError,
+            ServiceValidationError,
+            "Shopping list or recipe not found",
         ),
     ],
 )
@@ -832,6 +887,10 @@ async def test_services_without_response_error(
             },
         ),
         (SERVICE_GET_RECIPE_FAVORITES, {}),
+        (
+            SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+            {ATTR_SHOPPING_LIST_ID: "list-id", ATTR_RECIPE_ID: "recipe_id"},
+        ),
     ],
 )
 async def test_service_entry_availability(

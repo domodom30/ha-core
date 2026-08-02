@@ -37,9 +37,11 @@ from .const import (
     ATTR_NOTE_TITLE,
     ATTR_RATING,
     ATTR_RECIPE_ID,
+    ATTR_RECIPE_INCREMENT_QUANTITY,
     ATTR_RECIPE_SLUG,
     ATTR_RESULT_LIMIT,
     ATTR_SEARCH_TERMS,
+    ATTR_SHOPPING_LIST_ID,
     ATTR_START_DATE,
     ATTR_URL,
     DOMAIN,
@@ -160,6 +162,16 @@ SERVICE_RATE_RECIPE_SCHEMA = vol.Schema(
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
         vol.Required(ATTR_RECIPE_SLUG): str,
         vol.Required(ATTR_RATING): vol.All(vol.Coerce(float), vol.Range(min=0, max=5)),
+    }
+)
+
+SERVICE_ADD_RECIPE_TO_SHOPPING_LIST = "add_recipe_to_shopping_list"
+SERVICE_ADD_RECIPE_TO_SHOPPING_LIST_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required(ATTR_SHOPPING_LIST_ID): str,
+        vol.Required(ATTR_RECIPE_ID): str,
+        vol.Optional(ATTR_RECIPE_INCREMENT_QUANTITY): vol.Coerce(float),
     }
 )
 
@@ -417,6 +429,29 @@ async def _async_rate_recipe(call: ServiceCall) -> None:
         ) from err
 
 
+@_handle_mealie_errors
+async def _async_add_recipe_to_shopping_list(call: ServiceCall) -> ServiceResponse:
+    """Add recipe ingredients to a shopping list."""
+    entry = _get_entry(call)
+    shopping_list_id = call.data[ATTR_SHOPPING_LIST_ID]
+    recipe_id = call.data[ATTR_RECIPE_ID]
+    quantity = call.data.get(ATTR_RECIPE_INCREMENT_QUANTITY, 1)
+    client = entry.runtime_data.client
+    try:
+        shopping_list = await client.add_recipe_to_shopping_list(
+            shopping_list_id, recipe_id, scale=quantity
+        )
+    except (MealieNotFoundError, MealieValidationError) as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="shopping_list_or_recipe_not_found",
+        ) from err
+    await entry.runtime_data.shoppinglist_coordinator.async_request_refresh()
+    if call.return_response:
+        return {"shopping_list": asdict(shopping_list)}
+    return None
+
+
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Set up the services for the Mealie integration."""
@@ -509,4 +544,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_RATE_RECIPE,
         _async_rate_recipe,
         schema=SERVICE_RATE_RECIPE_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+        _async_add_recipe_to_shopping_list,
+        schema=SERVICE_ADD_RECIPE_TO_SHOPPING_LIST_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )

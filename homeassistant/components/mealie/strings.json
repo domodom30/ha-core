@@ -153,6 +153,9 @@
     "shopping_list_not_found": {
       "message": "Shopping list with name or ID `{shopping_list}` not found."
     },
+    "shopping_list_or_recipe_not_found": {
+      "message": "Shopping list or recipe not found."
+    },
     "update_failed_mealplan": {
       "message": "Could not fetch mealplan data."
     },
@@ -196,6 +199,28 @@
         }
       },
       "name": "Add recipe favorite"
+    },
+    "add_recipe_to_shopping_list": {
+      "description": "Adds the ingredients of a recipe to a shopping list.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        },
+        "recipe_id": {
+          "description": "The recipe ID or slug whose ingredients to add.",
+          "name": "Recipe ID or slug"
+        },
+        "recipe_increment_quantity": {
+          "description": "Multiplier for ingredient quantities (default: 1).",
+          "name": "Quantity multiplier"
+        },
+        "shopping_list_id": {
+          "description": "The ID of the shopping list to add the ingredients to.",
+          "name": "Shopping list ID"
+        }
+      },
+      "name": "Add recipe to shopping list"
     },
     "delete_mealplan": {
       "description": "Deletes a mealplan entry.",

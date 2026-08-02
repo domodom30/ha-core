@@ -1,4 +1,13 @@
 # serializer version: 1
+# name: test_service_add_recipe_to_shopping_list
+  dict({
+    'shopping_list': dict({
+      'group_id': '9ed7c880-3e85-4955-9318-1443d6e080fe',
+      'list_id': '27edbaab-2ec6-441f-8490-0283ea77585f',
+      'name': 'Supermarket',
+    }),
+  })
+# ---
 # name: test_service_get_recipe_favorites
   dict({
     'favorites': list([
