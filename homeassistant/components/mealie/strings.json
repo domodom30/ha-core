@@ -183,6 +183,20 @@
     }
   },
   "services": {
+    "add_recipe_favorite": {
+      "description": "Adds a recipe to the current user's favorites.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        },
+        "recipe_slug": {
+          "description": "The slug of the recipe to favorite.",
+          "name": "Recipe slug"
+        }
+      },
+      "name": "Add recipe favorite"
+    },
     "delete_mealplan": {
       "description": "Deletes a mealplan entry.",
       "fields": {
@@ -229,6 +243,16 @@
       },
       "name": "Get recipe"
     },
+    "get_recipe_favorites": {
+      "description": "Gets the current user's favorite recipes.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        }
+      },
+      "name": "Get recipe favorites"
+    },
     "get_recipes": {
       "description": "Searches for recipes with any matching properties in Mealie",
       "fields": {
@@ -268,6 +292,38 @@
         }
       },
       "name": "Import recipe"
+    },
+    "rate_recipe": {
+      "description": "Sets a rating for a recipe.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        },
+        "rating": {
+          "description": "Numeric rating between 0 and 5.",
+          "name": "Rating"
+        },
+        "recipe_slug": {
+          "description": "[%key:component::mealie::services::add_recipe_favorite::fields::recipe_slug::description%]",
+          "name": "[%key:component::mealie::services::add_recipe_favorite::fields::recipe_slug::name%]"
+        }
+      },
+      "name": "Rate recipe"
+    },
+    "remove_recipe_favorite": {
+      "description": "Removes a recipe from the current user's favorites.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        },
+        "recipe_slug": {
+          "description": "[%key:component::mealie::services::add_recipe_favorite::fields::recipe_slug::description%]",
+          "name": "[%key:component::mealie::services::add_recipe_favorite::fields::recipe_slug::name%]"
+        }
+      },
+      "name": "Remove recipe favorite"
     },
     "set_mealplan": {
       "description": "Sets a mealplan for a specific date",

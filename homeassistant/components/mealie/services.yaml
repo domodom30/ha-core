@@ -174,3 +174,55 @@ delete_mealplan:
         number:
           min: 1
           mode: box
+
+get_recipe_favorites:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
+
+add_recipe_favorite:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
+    recipe_slug:
+      required: true
+      selector:
+        text:
+
+remove_recipe_favorite:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
+    recipe_slug:
+      required: true
+      selector:
+        text:
+
+rate_recipe:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
+    recipe_slug:
+      required: true
+      selector:
+        text:
+    rating:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 0.5
+          mode: slider

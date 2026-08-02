@@ -24,6 +24,9 @@
     }
   },
   "services": {
+    "add_recipe_favorite": {
+      "service": "mdi:heart-plus"
+    },
     "delete_mealplan": {
       "service": "mdi:calendar-remove"
     },
@@ -33,6 +36,9 @@
     "get_recipe": {
       "service": "mdi:map"
     },
+    "get_recipe_favorites": {
+      "service": "mdi:heart"
+    },
     "get_recipes": {
       "service": "mdi:book-open-page-variant"
     },
@@ -41,6 +47,12 @@
     },
     "import_recipe": {
       "service": "mdi:map-search"
+    },
+    "rate_recipe": {
+      "service": "mdi:star"
+    },
+    "remove_recipe_favorite": {
+      "service": "mdi:heart-remove"
     },
     "set_mealplan": {
       "service": "mdi:food"

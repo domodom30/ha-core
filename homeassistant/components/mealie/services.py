@@ -10,6 +10,7 @@ from aiomealie import (
     MealieNotFoundError,
     MealieValidationError,
     MealplanEntryType,
+    RecipeFavoritesResponse,
 )
 from awesomeversion import AwesomeVersion
 import voluptuous as vol
@@ -34,7 +35,9 @@ from .const import (
     ATTR_MEALPLAN_ID,
     ATTR_NOTE_TEXT,
     ATTR_NOTE_TITLE,
+    ATTR_RATING,
     ATTR_RECIPE_ID,
+    ATTR_RECIPE_SLUG,
     ATTR_RESULT_LIMIT,
     ATTR_SEARCH_TERMS,
     ATTR_START_DATE,
@@ -125,6 +128,38 @@ SERVICE_DELETE_MEALPLAN_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
         vol.Required(ATTR_MEALPLAN_ID): int,
+    }
+)
+
+SERVICE_GET_RECIPE_FAVORITES = "get_recipe_favorites"
+SERVICE_GET_RECIPE_FAVORITES_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+    }
+)
+
+SERVICE_ADD_RECIPE_FAVORITE = "add_recipe_favorite"
+SERVICE_ADD_RECIPE_FAVORITE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required(ATTR_RECIPE_SLUG): str,
+    }
+)
+
+SERVICE_REMOVE_RECIPE_FAVORITE = "remove_recipe_favorite"
+SERVICE_REMOVE_RECIPE_FAVORITE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required(ATTR_RECIPE_SLUG): str,
+    }
+)
+
+SERVICE_RATE_RECIPE = "rate_recipe"
+SERVICE_RATE_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required(ATTR_RECIPE_SLUG): str,
+        vol.Required(ATTR_RATING): vol.All(vol.Coerce(float), vol.Range(min=0, max=5)),
     }
 )
 
@@ -325,6 +360,63 @@ async def _async_delete_mealplan(call: ServiceCall) -> None:
     await entry.runtime_data.mealplan_coordinator.async_request_refresh()
 
 
+@_handle_mealie_errors
+async def _async_get_recipe_favorites(call: ServiceCall) -> ServiceResponse:
+    """Get the current user's favorite recipes."""
+    entry = _get_entry(call)
+    client = entry.runtime_data.client
+    favorites: RecipeFavoritesResponse = await client.get_recipe_favorites()
+    return {"favorites": [asdict(r) for r in favorites.ratings if r.is_favorite]}
+
+
+@_handle_mealie_errors
+async def _async_add_recipe_favorite(call: ServiceCall) -> None:
+    """Add a recipe to the current user's favorites."""
+    entry = _get_entry(call)
+    recipe_slug = call.data[ATTR_RECIPE_SLUG]
+    client = entry.runtime_data.client
+    try:
+        await client.add_recipe_favorite(recipe_slug)
+    except MealieNotFoundError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="recipe_not_found",
+            translation_placeholders={"recipe_id": recipe_slug},
+        ) from err
+
+
+@_handle_mealie_errors
+async def _async_remove_recipe_favorite(call: ServiceCall) -> None:
+    """Remove a recipe from the current user's favorites."""
+    entry = _get_entry(call)
+    recipe_slug = call.data[ATTR_RECIPE_SLUG]
+    client = entry.runtime_data.client
+    try:
+        await client.remove_recipe_favorite(recipe_slug)
+    except MealieNotFoundError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="recipe_not_found",
+            translation_placeholders={"recipe_id": recipe_slug},
+        ) from err
+
+
+@_handle_mealie_errors
+async def _async_rate_recipe(call: ServiceCall) -> None:
+    """Set a rating for a recipe."""
+    entry = _get_entry(call)
+    recipe_slug = call.data[ATTR_RECIPE_SLUG]
+    client = entry.runtime_data.client
+    try:
+        await client.rate_recipe(recipe_slug, rating=call.data[ATTR_RATING])
+    except MealieNotFoundError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="recipe_not_found",
+            translation_placeholders={"recipe_id": recipe_slug},
+        ) from err
+
+
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Set up the services for the Mealie integration."""
@@ -392,4 +484,29 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_DELETE_MEALPLAN,
         _async_delete_mealplan,
         schema=SERVICE_DELETE_MEALPLAN_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_RECIPE_FAVORITES,
+        _async_get_recipe_favorites,
+        schema=SERVICE_GET_RECIPE_FAVORITES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADD_RECIPE_FAVORITE,
+        _async_add_recipe_favorite,
+        schema=SERVICE_ADD_RECIPE_FAVORITE_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REMOVE_RECIPE_FAVORITE,
+        _async_remove_recipe_favorite,
+        schema=SERVICE_REMOVE_RECIPE_FAVORITE_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RATE_RECIPE,
+        _async_rate_recipe,
+        schema=SERVICE_RATE_RECIPE_SCHEMA,
     )
