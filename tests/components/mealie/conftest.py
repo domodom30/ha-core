@@ -69,9 +69,11 @@ def mock_mealie_client() -> Generator[AsyncMock]:
         recipes = RecipesResponse.from_json(load_fixture("get_recipes.json", DOMAIN))
         client.get_recipes.return_value = recipes
         client.import_recipe.return_value = recipe
-        client.get_shopping_lists.return_value = ShoppingListsResponse.from_json(
+        shopping_lists = ShoppingListsResponse.from_json(
             load_fixture("get_shopping_lists.json", DOMAIN)
         )
+        client.get_shopping_lists.return_value = shopping_lists
+        client.add_recipe_to_shopping_list.return_value = shopping_lists.items[0]
         client.get_shopping_items.return_value = ShoppingItemsResponse.from_json(
             load_fixture("get_shopping_items.json", DOMAIN)
         )
