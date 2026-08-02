@@ -18,6 +18,7 @@ from homeassistant.components.mealie.const import (
     ATTR_END_DATE,
     ATTR_ENTRY_TYPE,
     ATTR_INCLUDE_TAGS,
+    ATTR_MEALPLAN_ID,
     ATTR_NOTE_TEXT,
     ATTR_NOTE_TITLE,
     ATTR_RECIPE_ID,
@@ -28,6 +29,7 @@ from homeassistant.components.mealie.const import (
     DOMAIN,
 )
 from homeassistant.components.mealie.services import (
+    SERVICE_DELETE_MEALPLAN,
     SERVICE_GET_MEALPLAN,
     SERVICE_GET_RECIPE,
     SERVICE_GET_RECIPES,
@@ -35,6 +37,7 @@ from homeassistant.components.mealie.services import (
     SERVICE_IMPORT_RECIPE,
     SERVICE_SET_MEALPLAN,
     SERVICE_SET_RANDOM_MEALPLAN,
+    SERVICE_UPDATE_MEALPLAN,
 )
 from homeassistant.const import ATTR_CONFIG_ENTRY_ID, ATTR_DATE
 from homeassistant.core import HomeAssistant
@@ -437,6 +440,58 @@ async def test_service_get_shopping_list_items_connection_error(
         )
 
 
+async def test_service_update_mealplan(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Test the update_mealplan service."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_UPDATE_MEALPLAN,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_MEALPLAN_ID: 1,
+            ATTR_DATE: "2023-10-21",
+            ATTR_ENTRY_TYPE: "lunch",
+            ATTR_RECIPE_ID: "recipe-id",
+        },
+        blocking=True,
+        return_response=True,
+    )
+    assert response == snapshot
+    mock_mealie_client.update_mealplan.assert_called_with(
+        1,
+        date(2023, 10, 21),
+        MealplanEntryType.LUNCH,
+        recipe_id="recipe-id",
+        note_title=None,
+        note_text=None,
+    )
+
+
+async def test_service_delete_mealplan(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test the delete_mealplan service."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_DELETE_MEALPLAN,
+        {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id, ATTR_MEALPLAN_ID: 1},
+        blocking=True,
+    )
+    mock_mealie_client.delete_mealplan.assert_called_with(1)
+
+
 @pytest.mark.parametrize(
     ("service", "payload", "function", "exception", "raised_exception", "message"),
     [
@@ -516,6 +571,32 @@ async def test_service_get_shopping_list_items_connection_error(
             HomeAssistantError,
             "Error connecting to Mealie instance",
         ),
+        (
+            SERVICE_UPDATE_MEALPLAN,
+            {
+                ATTR_MEALPLAN_ID: 1,
+                ATTR_DATE: "2023-10-21",
+                ATTR_ENTRY_TYPE: "lunch",
+                ATTR_RECIPE_ID: "recipe_id",
+            },
+            "update_mealplan",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_UPDATE_MEALPLAN,
+            {
+                ATTR_MEALPLAN_ID: 1,
+                ATTR_DATE: "2023-10-21",
+                ATTR_ENTRY_TYPE: "lunch",
+                ATTR_RECIPE_ID: "recipe_id",
+            },
+            "update_mealplan",
+            MealieNotFoundError,
+            ServiceValidationError,
+            "Mealplan with ID `1` not found",
+        ),
     ],
 )
 async def test_services_connection_error(
@@ -546,6 +627,53 @@ async def test_services_connection_error(
 
 
 @pytest.mark.parametrize(
+    ("service", "payload", "function", "exception", "raised_exception", "message"),
+    [
+        (
+            SERVICE_DELETE_MEALPLAN,
+            {ATTR_MEALPLAN_ID: 1},
+            "delete_mealplan",
+            MealieConnectionError,
+            HomeAssistantError,
+            "Error connecting to Mealie instance",
+        ),
+        (
+            SERVICE_DELETE_MEALPLAN,
+            {ATTR_MEALPLAN_ID: 1},
+            "delete_mealplan",
+            MealieNotFoundError,
+            ServiceValidationError,
+            "Mealplan with ID `1` not found",
+        ),
+    ],
+)
+async def test_services_without_response_error(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    service: str,
+    payload: dict[str, str],
+    function: str,
+    exception: Exception,
+    raised_exception: type[Exception],
+    message: str,
+) -> None:
+    """Test error handling for services that do not return a response."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    getattr(mock_mealie_client, function).side_effect = exception
+
+    with pytest.raises(raised_exception, match=message):
+        await hass.services.async_call(
+            DOMAIN,
+            service,
+            {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id} | payload,
+            blocking=True,
+        )
+
+
+@pytest.mark.parametrize(
     ("service", "payload"),
     [
         (SERVICE_GET_MEALPLAN, {}),
@@ -563,6 +691,15 @@ async def test_services_connection_error(
         (
             SERVICE_SET_MEALPLAN,
             {
+                ATTR_DATE: "2023-10-21",
+                ATTR_ENTRY_TYPE: "lunch",
+                ATTR_RECIPE_ID: "recipe_id",
+            },
+        ),
+        (
+            SERVICE_UPDATE_MEALPLAN,
+            {
+                ATTR_MEALPLAN_ID: 1,
                 ATTR_DATE: "2023-10-21",
                 ATTR_ENTRY_TYPE: "lunch",
                 ATTR_RECIPE_ID: "recipe_id",
