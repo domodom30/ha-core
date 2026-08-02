@@ -120,3 +120,57 @@ set_mealplan:
     note_text:
       selector:
         text:
+
+update_mealplan:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
+    mealplan_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    date:
+      required: true
+      selector:
+        date:
+    entry_type:
+      required: true
+      selector:
+        select:
+          options:
+            - breakfast
+            - lunch
+            - dinner
+            - side
+            - dessert
+            - snack
+            - drink
+          translation_key: mealplan_entry_type
+    recipe_id:
+      selector:
+        text:
+    note_title:
+      selector:
+        text:
+    note_text:
+      selector:
+        text:
+
+delete_mealplan:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
+    mealplan_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box

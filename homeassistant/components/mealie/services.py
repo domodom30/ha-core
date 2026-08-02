@@ -31,6 +31,7 @@ from .const import (
     ATTR_END_DATE,
     ATTR_ENTRY_TYPE,
     ATTR_INCLUDE_TAGS,
+    ATTR_MEALPLAN_ID,
     ATTR_NOTE_TEXT,
     ATTR_NOTE_TITLE,
     ATTR_RECIPE_ID,
@@ -90,29 +91,41 @@ SERVICE_SET_RANDOM_MEALPLAN_SCHEMA = vol.Schema(
     }
 )
 
+# Shared building blocks for the set/update mealplan schemas: a mealplan entry either
+# references a recipe or holds a free-form note.
+_MEALPLAN_ENTRY_BASE: dict[Any, Any] = {
+    vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+    vol.Required(ATTR_DATE): cv.date,
+    vol.Required(ATTR_ENTRY_TYPE): vol.In([x.lower() for x in MealplanEntryType]),
+}
+_MEALPLAN_RECIPE_ENTRY: dict[Any, Any] = {
+    **_MEALPLAN_ENTRY_BASE,
+    vol.Required(ATTR_RECIPE_ID): str,
+}
+_MEALPLAN_NOTE_ENTRY: dict[Any, Any] = {
+    **_MEALPLAN_ENTRY_BASE,
+    vol.Required(ATTR_NOTE_TITLE): str,
+    vol.Optional(ATTR_NOTE_TEXT): str,
+}
+
 SERVICE_SET_MEALPLAN = "set_mealplan"
 SERVICE_SET_MEALPLAN_SCHEMA = vol.Any(
-    vol.Schema(
-        {
-            vol.Required(ATTR_CONFIG_ENTRY_ID): str,
-            vol.Required(ATTR_DATE): cv.date,
-            vol.Required(ATTR_ENTRY_TYPE): vol.In(
-                [x.lower() for x in MealplanEntryType]
-            ),
-            vol.Required(ATTR_RECIPE_ID): str,
-        }
-    ),
-    vol.Schema(
-        {
-            vol.Required(ATTR_CONFIG_ENTRY_ID): str,
-            vol.Required(ATTR_DATE): cv.date,
-            vol.Required(ATTR_ENTRY_TYPE): vol.In(
-                [x.lower() for x in MealplanEntryType]
-            ),
-            vol.Required(ATTR_NOTE_TITLE): str,
-            vol.Optional(ATTR_NOTE_TEXT): str,
-        }
-    ),
+    vol.Schema(_MEALPLAN_RECIPE_ENTRY),
+    vol.Schema(_MEALPLAN_NOTE_ENTRY),
+)
+
+SERVICE_UPDATE_MEALPLAN = "update_mealplan"
+SERVICE_UPDATE_MEALPLAN_SCHEMA = vol.Any(
+    vol.Schema({vol.Required(ATTR_MEALPLAN_ID): int, **_MEALPLAN_RECIPE_ENTRY}),
+    vol.Schema({vol.Required(ATTR_MEALPLAN_ID): int, **_MEALPLAN_NOTE_ENTRY}),
+)
+
+SERVICE_DELETE_MEALPLAN = "delete_mealplan"
+SERVICE_DELETE_MEALPLAN_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required(ATTR_MEALPLAN_ID): int,
+    }
 )
 
 
@@ -263,6 +276,55 @@ async def _async_set_mealplan(call: ServiceCall) -> ServiceResponse:
     return None
 
 
+@_handle_mealie_errors
+async def _async_update_mealplan(call: ServiceCall) -> ServiceResponse:
+    """Update an existing mealplan entry."""
+    entry = _get_entry(call)
+    mealplan_id = call.data[ATTR_MEALPLAN_ID]
+    mealplan_date = call.data[ATTR_DATE]
+    entry_type = MealplanEntryType(call.data[ATTR_ENTRY_TYPE])
+    client = entry.runtime_data.client
+
+    _validate_mealplan_type(entry.runtime_data.version, entry_type.value)
+
+    try:
+        result = await client.update_mealplan(
+            mealplan_id,
+            mealplan_date,
+            entry_type,
+            recipe_id=call.data.get(ATTR_RECIPE_ID),
+            note_title=call.data.get(ATTR_NOTE_TITLE),
+            note_text=call.data.get(ATTR_NOTE_TEXT),
+        )
+    except MealieNotFoundError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="mealplan_not_found",
+            translation_placeholders={"mealplan_id": str(mealplan_id)},
+        ) from err
+    await entry.runtime_data.mealplan_coordinator.async_request_refresh()
+    if call.return_response:
+        return {"mealplan": asdict(result)}
+    return None
+
+
+@_handle_mealie_errors
+async def _async_delete_mealplan(call: ServiceCall) -> None:
+    """Delete a mealplan entry."""
+    entry = _get_entry(call)
+    mealplan_id = call.data[ATTR_MEALPLAN_ID]
+    client = entry.runtime_data.client
+    try:
+        await client.delete_mealplan(mealplan_id)
+    except MealieNotFoundError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="mealplan_not_found",
+            translation_placeholders={"mealplan_id": str(mealplan_id)},
+        ) from err
+    await entry.runtime_data.mealplan_coordinator.async_request_refresh()
+
+
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Set up the services for the Mealie integration."""
@@ -317,4 +379,17 @@ def async_setup_services(hass: HomeAssistant) -> None:
         schema=None,
         func="async_get_shopping_list_items",
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UPDATE_MEALPLAN,
+        _async_update_mealplan,
+        schema=SERVICE_UPDATE_MEALPLAN_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DELETE_MEALPLAN,
+        _async_delete_mealplan,
+        schema=SERVICE_DELETE_MEALPLAN_SCHEMA,
     )

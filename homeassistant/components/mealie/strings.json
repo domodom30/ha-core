@@ -138,6 +138,9 @@
     "item_not_found_error": {
       "message": "Item {shopping_list_item} not found."
     },
+    "mealplan_not_found": {
+      "message": "Mealplan with ID `{mealplan_id}` not found."
+    },
     "no_recipes_found": {
       "message": "No recipes found matching your search."
     },
@@ -180,6 +183,20 @@
     }
   },
   "services": {
+    "delete_mealplan": {
+      "description": "Deletes a mealplan entry.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        },
+        "mealplan_id": {
+          "description": "[%key:component::mealie::services::update_mealplan::fields::mealplan_id::description%]",
+          "name": "[%key:component::mealie::services::update_mealplan::fields::mealplan_id::name%]"
+        }
+      },
+      "name": "Delete mealplan"
+    },
     "get_mealplan": {
       "description": "Gets a mealplan from Mealie",
       "fields": {
@@ -299,6 +316,40 @@
         }
       },
       "name": "Set random mealplan"
+    },
+    "update_mealplan": {
+      "description": "Updates an existing mealplan entry.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        },
+        "date": {
+          "description": "[%key:component::mealie::services::set_random_mealplan::fields::date::description%]",
+          "name": "[%key:component::mealie::services::set_random_mealplan::fields::date::name%]"
+        },
+        "entry_type": {
+          "description": "The type of dish.",
+          "name": "[%key:component::mealie::services::set_random_mealplan::fields::entry_type::name%]"
+        },
+        "mealplan_id": {
+          "description": "The numeric ID of the mealplan entry to update.",
+          "name": "Mealplan ID"
+        },
+        "note_text": {
+          "description": "[%key:component::mealie::services::set_mealplan::fields::note_text::description%]",
+          "name": "[%key:component::mealie::services::set_mealplan::fields::note_text::name%]"
+        },
+        "note_title": {
+          "description": "[%key:component::mealie::services::set_mealplan::fields::note_title::description%]",
+          "name": "[%key:component::mealie::services::set_mealplan::fields::note_title::name%]"
+        },
+        "recipe_id": {
+          "description": "The recipe ID or slug to assign (mutually exclusive with note_title).",
+          "name": "Recipe ID or slug"
+        }
+      },
+      "name": "Update mealplan"
     }
   }
 }
