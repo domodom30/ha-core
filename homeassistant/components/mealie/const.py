@@ -2,6 +2,7 @@
 
 import logging
 
+from aiomealie import MealplanEntryType
 from awesomeversion import AwesomeVersion
 
 DOMAIN = "mealie"
@@ -20,3 +21,13 @@ ATTR_SEARCH_TERMS = "search_terms"
 ATTR_RESULT_LIMIT = "result_limit"
 
 MIN_REQUIRED_MEALIE_VERSION = AwesomeVersion("v2.0.0")
+
+# Starting with Mealie 3.7.0, all mealplan entry types are supported. Prior to that,
+# only breakfast, lunch, dinner and side were available.
+MEALIE_MULTIPLE_ENTRY_TYPES_VERSION = AwesomeVersion("v3.7.0")
+LEGACY_MEALPLAN_ENTRY_TYPES = (
+    MealplanEntryType.BREAKFAST,
+    MealplanEntryType.LUNCH,
+    MealplanEntryType.DINNER,
+    MealplanEntryType.SIDE,
+)

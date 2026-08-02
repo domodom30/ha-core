@@ -3,12 +3,12 @@
 from datetime import datetime
 
 from aiomealie import Mealplan, MealplanEntryType
-from awesomeversion import AwesomeVersion
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import LEGACY_MEALPLAN_ENTRY_TYPES, MEALIE_MULTIPLE_ENTRY_TYPES_VERSION
 from .coordinator import MealieConfigEntry, MealieMealplanCoordinator
 from .entity import MealieEntity
 
@@ -24,18 +24,12 @@ async def async_setup_entry(
     coordinator = entry.runtime_data.mealplan_coordinator
     version = entry.runtime_data.version
 
-    supported_mealplan_entry_types: list[MealplanEntryType]
-    if version.valid and version < AwesomeVersion("v3.7.0"):
-        # Prior to Mealie 3.7.0, only these mealplan entry types were supported
-        supported_mealplan_entry_types = [
-            MealplanEntryType.BREAKFAST,
-            MealplanEntryType.DINNER,
-            MealplanEntryType.LUNCH,
-            MealplanEntryType.SIDE,
-        ]
+    supported_mealplan_entry_types: tuple[MealplanEntryType, ...]
+    if version.valid and version < MEALIE_MULTIPLE_ENTRY_TYPES_VERSION:
+        supported_mealplan_entry_types = LEGACY_MEALPLAN_ENTRY_TYPES
     else:
         # For Mealie 3.7.0 and newer and nightlies, add all current mealplan entry types
-        supported_mealplan_entry_types = list(MealplanEntryType)
+        supported_mealplan_entry_types = tuple(MealplanEntryType)
 
     async_add_entities(
         MealieMealplanCalendarEntity(coordinator, entry_type)

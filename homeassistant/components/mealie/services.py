@@ -1,6 +1,9 @@
 """Define services for the Mealie integration."""
 
+from collections.abc import Callable, Coroutine
 from dataclasses import asdict
+from functools import wraps
+from typing import Any
 
 from aiomealie import (
     MealieConnectionError,
@@ -36,6 +39,8 @@ from .const import (
     ATTR_START_DATE,
     ATTR_URL,
     DOMAIN,
+    LEGACY_MEALPLAN_ENTRY_TYPES,
+    MEALIE_MULTIPLE_ENTRY_TYPES_VERSION,
 )
 from .coordinator import MealieConfigEntry
 
@@ -111,19 +116,38 @@ SERVICE_SET_MEALPLAN_SCHEMA = vol.Any(
 )
 
 
+def _get_entry(call: ServiceCall) -> MealieConfigEntry:
+    """Get the Mealie config entry targeted by the service call."""
+    return service.async_get_config_entry(
+        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
+    )
+
+
+def _handle_mealie_errors[_R](
+    func: Callable[[ServiceCall], Coroutine[Any, Any, _R]],
+) -> Callable[[ServiceCall], Coroutine[Any, Any, _R]]:
+    """Translate Mealie connection errors into a HomeAssistantError."""
+
+    @wraps(func)
+    async def wrapper(call: ServiceCall) -> _R:
+        try:
+            return await func(call)
+        except MealieConnectionError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="connection_error",
+            ) from err
+
+    return wrapper
+
+
 def _validate_mealplan_type(version: AwesomeVersion, entry_type: str) -> None:
     """Validate mealplan entry type, if prior to 3.7.0."""
 
     if (
         version.valid
-        and version < AwesomeVersion("v3.7.0")
-        and entry_type
-        not in {
-            MealplanEntryType.BREAKFAST.value,
-            MealplanEntryType.DINNER.value,
-            MealplanEntryType.LUNCH.value,
-            MealplanEntryType.SIDE.value,
-        }
+        and version < MEALIE_MULTIPLE_ENTRY_TYPES_VERSION
+        and entry_type not in {x.value for x in LEGACY_MEALPLAN_ENTRY_TYPES}
     ):
         raise ServiceValidationError(
             translation_domain=DOMAIN,
@@ -132,11 +156,10 @@ def _validate_mealplan_type(version: AwesomeVersion, entry_type: str) -> None:
         )
 
 
+@_handle_mealie_errors
 async def _async_get_mealplan(call: ServiceCall) -> ServiceResponse:
     """Get the mealplan for a specific range."""
-    entry: MealieConfigEntry = service.async_get_config_entry(
-        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
-    )
+    entry = _get_entry(call)
     start_date = call.data.get(ATTR_START_DATE, dt_util.now().date())
     end_date = call.data.get(ATTR_END_DATE, dt_util.now().date())
     if end_date < start_date:
@@ -145,30 +168,18 @@ async def _async_get_mealplan(call: ServiceCall) -> ServiceResponse:
             translation_key="end_date_before_start_date",
         )
     client = entry.runtime_data.client
-    try:
-        mealplans = await client.get_mealplans(start_date, end_date)
-    except MealieConnectionError as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="connection_error",
-        ) from err
+    mealplans = await client.get_mealplans(start_date, end_date)
     return {"mealplan": [asdict(x) for x in mealplans.items]}
 
 
+@_handle_mealie_errors
 async def _async_get_recipe(call: ServiceCall) -> ServiceResponse:
     """Get a recipe."""
-    entry: MealieConfigEntry = service.async_get_config_entry(
-        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
-    )
+    entry = _get_entry(call)
     recipe_id = call.data[ATTR_RECIPE_ID]
     client = entry.runtime_data.client
     try:
         recipe = await client.get_recipe(recipe_id)
-    except MealieConnectionError as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="connection_error",
-        ) from err
     except MealieNotFoundError as err:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
@@ -178,21 +189,15 @@ async def _async_get_recipe(call: ServiceCall) -> ServiceResponse:
     return {"recipe": asdict(recipe)}
 
 
+@_handle_mealie_errors
 async def _async_get_recipes(call: ServiceCall) -> ServiceResponse:
     """Get recipes."""
-    entry: MealieConfigEntry = service.async_get_config_entry(
-        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
-    )
+    entry = _get_entry(call)
     search_terms = call.data.get(ATTR_SEARCH_TERMS)
     result_limit = call.data.get(ATTR_RESULT_LIMIT, 10)
     client = entry.runtime_data.client
     try:
         recipes = await client.get_recipes(search=search_terms, per_page=result_limit)
-    except MealieConnectionError as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="connection_error",
-        ) from err
     except MealieNotFoundError as err:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
@@ -201,11 +206,10 @@ async def _async_get_recipes(call: ServiceCall) -> ServiceResponse:
     return {"recipes": asdict(recipes)}
 
 
+@_handle_mealie_errors
 async def _async_import_recipe(call: ServiceCall) -> ServiceResponse:
     """Import a recipe."""
-    entry: MealieConfigEntry = service.async_get_config_entry(
-        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
-    )
+    entry = _get_entry(call)
     url = call.data[ATTR_URL]
     include_tags = call.data.get(ATTR_INCLUDE_TAGS, False)
     client = entry.runtime_data.client
@@ -216,63 +220,44 @@ async def _async_import_recipe(call: ServiceCall) -> ServiceResponse:
             translation_domain=DOMAIN,
             translation_key="could_not_import_recipe",
         ) from err
-    except MealieConnectionError as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="connection_error",
-        ) from err
     if call.return_response:
         return {"recipe": asdict(recipe)}
     return None
 
 
+@_handle_mealie_errors
 async def _async_set_random_mealplan(call: ServiceCall) -> ServiceResponse:
     """Set a random mealplan."""
-    entry: MealieConfigEntry = service.async_get_config_entry(
-        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
-    )
+    entry = _get_entry(call)
     mealplan_date = call.data[ATTR_DATE]
     entry_type = MealplanEntryType(call.data[ATTR_ENTRY_TYPE])
     client = entry.runtime_data.client
 
     _validate_mealplan_type(entry.runtime_data.version, entry_type.value)
 
-    try:
-        mealplan = await client.random_mealplan(mealplan_date, entry_type)
-    except MealieConnectionError as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="connection_error",
-        ) from err
+    mealplan = await client.random_mealplan(mealplan_date, entry_type)
     if call.return_response:
         return {"mealplan": asdict(mealplan)}
     return None
 
 
+@_handle_mealie_errors
 async def _async_set_mealplan(call: ServiceCall) -> ServiceResponse:
     """Set a mealplan."""
-    entry: MealieConfigEntry = service.async_get_config_entry(
-        call.hass, DOMAIN, call.data[ATTR_CONFIG_ENTRY_ID]
-    )
+    entry = _get_entry(call)
     mealplan_date = call.data[ATTR_DATE]
     entry_type = MealplanEntryType(call.data[ATTR_ENTRY_TYPE])
     client = entry.runtime_data.client
 
     _validate_mealplan_type(entry.runtime_data.version, entry_type.value)
 
-    try:
-        mealplan = await client.set_mealplan(
-            mealplan_date,
-            entry_type,
-            recipe_id=call.data.get(ATTR_RECIPE_ID),
-            note_title=call.data.get(ATTR_NOTE_TITLE),
-            note_text=call.data.get(ATTR_NOTE_TEXT),
-        )
-    except MealieConnectionError as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="connection_error",
-        ) from err
+    mealplan = await client.set_mealplan(
+        mealplan_date,
+        entry_type,
+        recipe_id=call.data.get(ATTR_RECIPE_ID),
+        note_title=call.data.get(ATTR_NOTE_TITLE),
+        note_text=call.data.get(ATTR_NOTE_TEXT),
+    )
     if call.return_response:
         return {"mealplan": asdict(mealplan)}
     return None
