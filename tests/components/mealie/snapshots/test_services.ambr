@@ -3641,6 +3641,27 @@
     }),
   })
 # ---
+# name: test_service_get_shopping_lists
+  dict({
+    'shopping_lists': list([
+      dict({
+        'group_id': '9ed7c880-3e85-4955-9318-1443d6e080fe',
+        'list_id': '27edbaab-2ec6-441f-8490-0283ea77585f',
+        'name': 'Supermarket',
+      }),
+      dict({
+        'group_id': '9ed7c880-3e85-4955-9318-1443d6e080fe',
+        'list_id': 'f8438635-8211-4be8-80d0-0aa42e37a5f2',
+        'name': 'Special groceries',
+      }),
+      dict({
+        'group_id': '9ed7c880-3e85-4955-9318-1443d6e080fe',
+        'list_id': 'e9d78ff2-4b23-4b77-a3a8-464827100b46',
+        'name': 'Freezer',
+      }),
+    ]),
+  })
+# ---
 # name: test_service_import_recipe
   dict({
     'recipe': dict({

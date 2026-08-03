@@ -32,11 +32,9 @@ get_recipes:
         config_entry:
           integration: mealie
     search_terms:
-      required: false
       selector:
         text:
     result_limit:
-      required: false
       default: 10
       selector:
         number:
@@ -44,6 +42,14 @@ get_recipes:
           max: 100
           mode: box
           unit_of_measurement: recipes
+
+get_shopping_lists:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: mealie
 
 get_shopping_list_items:
   target:
@@ -74,9 +80,11 @@ set_random_mealplan:
         config_entry:
           integration: mealie
     date:
+      required: true
       selector:
         date:
     entry_type:
+      required: true
       selector:
         select:
           options:
@@ -97,9 +105,11 @@ set_mealplan:
         config_entry:
           integration: mealie
     date:
+      required: true
       selector:
         date:
     entry_type:
+      required: true
       selector:
         select:
           options:
@@ -224,7 +234,7 @@ rate_recipe:
         number:
           min: 0
           max: 5
-          step: 0.5
+          step: 1
           mode: slider
 
 add_recipe_to_shopping_list:

@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock
 
 from aiomealie import (
     About,
+    MealieAuthenticationError,
+    MealieBadRequestError,
     MealieConnectionError,
     MealieNotFoundError,
     MealieValidationError,
@@ -13,6 +15,7 @@ from aiomealie import (
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 from syrupy.assertion import SnapshotAssertion
+import voluptuous as vol
 
 from homeassistant.components.mealie.const import (
     ATTR_END_DATE,
@@ -41,6 +44,7 @@ from homeassistant.components.mealie.services import (
     SERVICE_GET_RECIPE_FAVORITES,
     SERVICE_GET_RECIPES,
     SERVICE_GET_SHOPPING_LIST_ITEMS,
+    SERVICE_GET_SHOPPING_LISTS,
     SERVICE_IMPORT_RECIPE,
     SERVICE_RATE_RECIPE,
     SERVICE_REMOVE_RECIPE_FAVORITE,
@@ -408,6 +412,313 @@ async def test_service_set_mealplan_invalid_entry_type(
     mock_mealie_client.set_mealplan.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("service", "payload"),
+    [
+        pytest.param(SERVICE_SET_MEALPLAN, {ATTR_RECIPE_ID: "recipe-id"}, id="set"),
+        pytest.param(SERVICE_SET_RANDOM_MEALPLAN, {}, id="random"),
+    ],
+)
+async def test_service_create_mealplan_refreshes_coordinator(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    service: str,
+    payload: dict[str, str],
+) -> None:
+    """Test creating a mealplan refreshes the mealplan coordinator."""
+
+    await setup_integration(hass, mock_config_entry)
+    mock_mealie_client.get_mealplans.reset_mock()
+
+    await hass.services.async_call(
+        DOMAIN,
+        service,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_DATE: "2023-10-21",
+            ATTR_ENTRY_TYPE: "lunch",
+        }
+        | payload,
+        blocking=True,
+    )
+
+    mock_mealie_client.get_mealplans.assert_called()
+
+
+@pytest.mark.parametrize(
+    ("service", "payload"),
+    [
+        pytest.param(SERVICE_SET_MEALPLAN, {}, id="set_neither"),
+        pytest.param(
+            SERVICE_SET_MEALPLAN,
+            {ATTR_RECIPE_ID: "recipe-id", ATTR_NOTE_TITLE: "Note"},
+            id="set_both",
+        ),
+        pytest.param(
+            SERVICE_SET_MEALPLAN, {ATTR_NOTE_TEXT: "Text"}, id="set_note_text_only"
+        ),
+        pytest.param(
+            SERVICE_UPDATE_MEALPLAN, {ATTR_MEALPLAN_ID: 1}, id="update_neither"
+        ),
+        pytest.param(
+            SERVICE_UPDATE_MEALPLAN,
+            {
+                ATTR_MEALPLAN_ID: 1,
+                ATTR_RECIPE_ID: "recipe-id",
+                ATTR_NOTE_TITLE: "Note",
+            },
+            id="update_both",
+        ),
+    ],
+)
+async def test_mealplan_content_is_exclusive(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    service: str,
+    payload: dict[str, str | int],
+) -> None:
+    """Test a mealplan entry must reference either a recipe or a note, never both."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            service,
+            {
+                ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+                ATTR_DATE: "2023-10-21",
+                ATTR_ENTRY_TYPE: "lunch",
+            }
+            | payload,
+            blocking=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mealplan_id", "expected"),
+    [
+        pytest.param(1, 1, id="int"),
+        pytest.param("1", 1, id="string"),
+        pytest.param(1.0, 1, id="float"),
+    ],
+)
+async def test_service_delete_mealplan_coerces_id(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    mealplan_id: str | float,
+    expected: int,
+) -> None:
+    """Test the mealplan ID is coerced to an integer."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_DELETE_MEALPLAN,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_MEALPLAN_ID: mealplan_id,
+        },
+        blocking=True,
+    )
+
+    mock_mealie_client.delete_mealplan.assert_called_with(expected)
+
+
+@pytest.mark.parametrize(
+    ("service", "payload", "return_response"),
+    [
+        pytest.param(
+            SERVICE_DELETE_MEALPLAN, {ATTR_MEALPLAN_ID: 0}, False, id="mealplan_id_zero"
+        ),
+        pytest.param(
+            SERVICE_DELETE_MEALPLAN,
+            {ATTR_MEALPLAN_ID: -1},
+            False,
+            id="mealplan_id_negative",
+        ),
+        pytest.param(
+            SERVICE_GET_RECIPES, {ATTR_RESULT_LIMIT: 0}, True, id="result_limit_zero"
+        ),
+        pytest.param(
+            SERVICE_IMPORT_RECIPE,
+            {ATTR_URL: "not-a-url"},
+            False,
+            id="url_malformed",
+        ),
+        pytest.param(
+            SERVICE_ADD_RECIPE_TO_SHOPPING_LIST,
+            {
+                ATTR_SHOPPING_LIST_ID: "shopping-list-id",
+                ATTR_RECIPE_ID: "recipe-id",
+                ATTR_RECIPE_INCREMENT_QUANTITY: 0,
+            },
+            False,
+            id="quantity_zero",
+        ),
+        pytest.param(
+            SERVICE_RATE_RECIPE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 6},
+            False,
+            id="rating_above_max",
+        ),
+        pytest.param(
+            SERVICE_RATE_RECIPE,
+            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: -1},
+            False,
+            id="rating_negative",
+        ),
+    ],
+)
+async def test_services_reject_invalid_values(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    service: str,
+    payload: dict[str, str | int],
+    return_response: bool,
+) -> None:
+    """Test out-of-range and malformed values are rejected by the schemas."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            service,
+            {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id} | payload,
+            blocking=True,
+            return_response=return_response,
+        )
+
+
+async def test_service_get_recipes_accepts_large_limit(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test result_limit is not capped server side, unlike the selector hint."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_GET_RECIPES,
+        {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id, ATTR_RESULT_LIMIT: 9999},
+        blocking=True,
+        return_response=True,
+    )
+
+    mock_mealie_client.get_recipes.assert_called_with(search=None, per_page=9999)
+
+
+async def test_service_import_recipe_coerces_include_tags(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test include_tags accepts the usual Home Assistant boolean spellings."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_IMPORT_RECIPE,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_URL: "http://example.com",
+            ATTR_INCLUDE_TAGS: "true",
+        },
+        blocking=True,
+    )
+
+    mock_mealie_client.import_recipe.assert_called_with(
+        "http://example.com", include_tags=True
+    )
+
+
+async def test_service_rate_recipe_uses_whole_stars(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test the rating reaches the client as a whole number of stars."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RATE_RECIPE,
+        {
+            ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
+            ATTR_RECIPE_SLUG: "pizza-recipe",
+            ATTR_RATING: "4",
+        },
+        blocking=True,
+    )
+
+    rating = mock_mealie_client.rate_recipe.call_args.kwargs["rating"]
+    assert rating == 4
+    assert isinstance(rating, int)
+
+
+async def test_service_get_shopping_lists(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Test the get_shopping_lists service."""
+
+    await setup_integration(hass, mock_config_entry)
+    mock_mealie_client.get_shopping_lists.reset_mock()
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_GET_SHOPPING_LISTS,
+        {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response == snapshot
+    mock_mealie_client.get_shopping_lists.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("exception", "message"),
+    [
+        (MealieAuthenticationError, "Authentication failed"),
+        (MealieBadRequestError, "unexpected error occurred"),
+    ],
+)
+async def test_service_translates_remaining_mealie_errors(
+    hass: HomeAssistant,
+    mock_mealie_client: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+    exception: type[Exception],
+    message: str,
+) -> None:
+    """Test authentication and unexpected Mealie errors reach the user translated."""
+
+    await setup_integration(hass, mock_config_entry)
+
+    mock_mealie_client.get_mealplans.side_effect = exception
+
+    with pytest.raises(HomeAssistantError, match=message):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_GET_MEALPLAN,
+            {ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id},
+            blocking=True,
+            return_response=True,
+        )
+
+
 async def test_service_get_shopping_list_items(
     hass: HomeAssistant,
     mock_mealie_client: AsyncMock,
@@ -566,11 +877,11 @@ async def test_service_rate_recipe(
         {
             ATTR_CONFIG_ENTRY_ID: mock_config_entry.entry_id,
             ATTR_RECIPE_SLUG: "pizza-recipe",
-            ATTR_RATING: 4.5,
+            ATTR_RATING: 4,
         },
         blocking=True,
     )
-    mock_mealie_client.rate_recipe.assert_called_with("pizza-recipe", rating=4.5)
+    mock_mealie_client.rate_recipe.assert_called_with("pizza-recipe", rating=4)
 
 
 async def test_service_add_recipe_to_shopping_list(
@@ -812,7 +1123,7 @@ async def test_services_connection_error(
         ),
         (
             SERVICE_RATE_RECIPE,
-            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 4.5},
+            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 4},
             "rate_recipe",
             MealieConnectionError,
             HomeAssistantError,
@@ -820,7 +1131,7 @@ async def test_services_connection_error(
         ),
         (
             SERVICE_RATE_RECIPE,
-            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 4.5},
+            {ATTR_RECIPE_SLUG: "pizza-recipe", ATTR_RATING: 4},
             "rate_recipe",
             MealieNotFoundError,
             ServiceValidationError,

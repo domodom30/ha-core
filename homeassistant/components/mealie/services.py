@@ -6,7 +6,9 @@ from functools import wraps
 from typing import Any
 
 from aiomealie import (
+    MealieAuthenticationError,
     MealieConnectionError,
+    MealieError,
     MealieNotFoundError,
     MealieValidationError,
     MealplanEntryType,
@@ -72,18 +74,27 @@ SERVICE_GET_RECIPES_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
         vol.Optional(ATTR_SEARCH_TERMS): str,
-        vol.Optional(ATTR_RESULT_LIMIT): int,
+        # No upper bound: the selector caps at 100 for usability, but callers
+        # legitimately request the whole library in one go.
+        vol.Optional(ATTR_RESULT_LIMIT): vol.All(vol.Coerce(int), vol.Range(min=1)),
     }
 )
 
 SERVICE_GET_SHOPPING_LIST_ITEMS = "get_shopping_list_items"
 
+SERVICE_GET_SHOPPING_LISTS = "get_shopping_lists"
+SERVICE_GET_SHOPPING_LISTS_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+    }
+)
+
 SERVICE_IMPORT_RECIPE = "import_recipe"
 SERVICE_IMPORT_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
-        vol.Required(ATTR_URL): str,
-        vol.Optional(ATTR_INCLUDE_TAGS): bool,
+        vol.Required(ATTR_URL): cv.url,
+        vol.Optional(ATTR_INCLUDE_TAGS): cv.boolean,
     }
 )
 
@@ -119,17 +130,21 @@ SERVICE_SET_MEALPLAN_SCHEMA = vol.Any(
     vol.Schema(_MEALPLAN_NOTE_ENTRY),
 )
 
+_MEALPLAN_ID = vol.All(vol.Coerce(int), vol.Range(min=1))
+
 SERVICE_UPDATE_MEALPLAN = "update_mealplan"
 SERVICE_UPDATE_MEALPLAN_SCHEMA = vol.Any(
-    vol.Schema({vol.Required(ATTR_MEALPLAN_ID): int, **_MEALPLAN_RECIPE_ENTRY}),
-    vol.Schema({vol.Required(ATTR_MEALPLAN_ID): int, **_MEALPLAN_NOTE_ENTRY}),
+    vol.Schema(
+        {vol.Required(ATTR_MEALPLAN_ID): _MEALPLAN_ID, **_MEALPLAN_RECIPE_ENTRY}
+    ),
+    vol.Schema({vol.Required(ATTR_MEALPLAN_ID): _MEALPLAN_ID, **_MEALPLAN_NOTE_ENTRY}),
 )
 
 SERVICE_DELETE_MEALPLAN = "delete_mealplan"
 SERVICE_DELETE_MEALPLAN_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
-        vol.Required(ATTR_MEALPLAN_ID): int,
+        vol.Required(ATTR_MEALPLAN_ID): _MEALPLAN_ID,
     }
 )
 
@@ -161,7 +176,7 @@ SERVICE_RATE_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
         vol.Required(ATTR_RECIPE_SLUG): str,
-        vol.Required(ATTR_RATING): vol.All(vol.Coerce(float), vol.Range(min=0, max=5)),
+        vol.Required(ATTR_RATING): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
     }
 )
 
@@ -171,7 +186,9 @@ SERVICE_ADD_RECIPE_TO_SHOPPING_LIST_SCHEMA = vol.Schema(
         vol.Required(ATTR_CONFIG_ENTRY_ID): str,
         vol.Required(ATTR_SHOPPING_LIST_ID): str,
         vol.Required(ATTR_RECIPE_ID): str,
-        vol.Optional(ATTR_RECIPE_INCREMENT_QUANTITY): vol.Coerce(float),
+        vol.Optional(ATTR_RECIPE_INCREMENT_QUANTITY): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=100)
+        ),
     }
 )
 
@@ -186,7 +203,11 @@ def _get_entry(call: ServiceCall) -> MealieConfigEntry:
 def _handle_mealie_errors[_R](
     func: Callable[[ServiceCall], Coroutine[Any, Any, _R]],
 ) -> Callable[[ServiceCall], Coroutine[Any, Any, _R]]:
-    """Translate Mealie connection errors into a HomeAssistantError."""
+    """Translate Mealie errors into a HomeAssistantError.
+
+    Handlers catching a more specific error do so inside the wrapped coroutine,
+    so their own translation wins over these fallbacks.
+    """
 
     @wraps(func)
     async def wrapper(call: ServiceCall) -> _R:
@@ -196,6 +217,16 @@ def _handle_mealie_errors[_R](
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="connection_error",
+            ) from err
+        except MealieAuthenticationError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="auth_failed",
+            ) from err
+        except MealieError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_error",
             ) from err
 
     return wrapper
@@ -296,6 +327,7 @@ async def _async_set_random_mealplan(call: ServiceCall) -> ServiceResponse:
     _validate_mealplan_type(entry.runtime_data.version, entry_type.value)
 
     mealplan = await client.random_mealplan(mealplan_date, entry_type)
+    await entry.runtime_data.mealplan_coordinator.async_request_refresh()
     if call.return_response:
         return {"mealplan": asdict(mealplan)}
     return None
@@ -318,6 +350,7 @@ async def _async_set_mealplan(call: ServiceCall) -> ServiceResponse:
         note_title=call.data.get(ATTR_NOTE_TITLE),
         note_text=call.data.get(ATTR_NOTE_TEXT),
     )
+    await entry.runtime_data.mealplan_coordinator.async_request_refresh()
     if call.return_response:
         return {"mealplan": asdict(mealplan)}
     return None
@@ -370,6 +403,18 @@ async def _async_delete_mealplan(call: ServiceCall) -> None:
             translation_placeholders={"mealplan_id": str(mealplan_id)},
         ) from err
     await entry.runtime_data.mealplan_coordinator.async_request_refresh()
+
+
+@_handle_mealie_errors
+async def _async_get_shopping_lists(call: ServiceCall) -> ServiceResponse:
+    """Get the shopping lists and their identifiers."""
+    entry = _get_entry(call)
+    coordinator = entry.runtime_data.shoppinglist_coordinator
+    return {
+        "shopping_lists": [
+            asdict(data.shopping_list) for data in coordinator.data.values()
+        ]
+    }
 
 
 @_handle_mealie_errors
@@ -497,6 +542,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
         _async_set_mealplan,
         schema=SERVICE_SET_MEALPLAN_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_SHOPPING_LISTS,
+        _async_get_shopping_lists,
+        schema=SERVICE_GET_SHOPPING_LISTS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     service.async_register_platform_entity_service(
         hass,

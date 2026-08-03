@@ -16,7 +16,7 @@
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "ingress_url": "Ingress URLs are only used for accessing the Mealie UI. Use your Home Assistant IP address and the network port within the configuration tab of the Mealie app.",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "mealie_version": "Minimum required version is v1.0.0. Please upgrade Mealie and then retry.",
+      "mealie_version": "Minimum required version is v2.0.0. Please upgrade Mealie and then retry.",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "step": {
@@ -150,11 +150,11 @@
     "setup_failed": {
       "message": "Could not connect to the Mealie instance."
     },
-    "shopping_list_not_found": {
-      "message": "Shopping list with name or ID `{shopping_list}` not found."
-    },
     "shopping_list_or_recipe_not_found": {
       "message": "Shopping list or recipe not found."
+    },
+    "unknown_error": {
+      "message": "An unexpected error occurred while communicating with Mealie."
     },
     "update_failed_mealplan": {
       "message": "Could not fetch mealplan data."
@@ -279,7 +279,7 @@
       "name": "Get recipe favorites"
     },
     "get_recipes": {
-      "description": "Searches for recipes with any matching properties in Mealie",
+      "description": "Gets recipes from Mealie. The response wraps the recipes in an items list.",
       "fields": {
         "config_entry_id": {
           "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
@@ -299,6 +299,16 @@
     "get_shopping_list_items": {
       "description": "Gets items from a shopping list in Mealie",
       "name": "Get shopping list items"
+    },
+    "get_shopping_lists": {
+      "description": "Gets the shopping lists and their identifiers.",
+      "fields": {
+        "config_entry_id": {
+          "description": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::description%]",
+          "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
+        }
+      },
+      "name": "Get shopping lists"
     },
     "import_recipe": {
       "description": "Imports a recipe from an URL",
@@ -326,7 +336,7 @@
           "name": "[%key:component::mealie::services::get_mealplan::fields::config_entry_id::name%]"
         },
         "rating": {
-          "description": "Numeric rating between 0 and 5.",
+          "description": "Whole number of stars between 0 and 5.",
           "name": "Rating"
         },
         "recipe_slug": {
@@ -366,15 +376,15 @@
           "name": "[%key:component::mealie::services::set_random_mealplan::fields::entry_type::name%]"
         },
         "note_text": {
-          "description": "Meal note text for when planning without recipe.",
+          "description": "Meal note text for when planning without a recipe. Requires a note title.",
           "name": "Note text"
         },
         "note_title": {
-          "description": "Meal note title for when planning without recipe.",
+          "description": "Meal note title for when planning without a recipe. Mutually exclusive with the recipe ID.",
           "name": "Meal note title"
         },
         "recipe_id": {
-          "description": "The recipe ID or the slug of the recipe to get.",
+          "description": "The recipe ID or the slug of the recipe to plan. Mutually exclusive with the note title.",
           "name": "Recipe ID"
         }
       },
@@ -426,7 +436,7 @@
           "name": "[%key:component::mealie::services::set_mealplan::fields::note_title::name%]"
         },
         "recipe_id": {
-          "description": "The recipe ID or slug to assign (mutually exclusive with note_title).",
+          "description": "The recipe ID or slug to assign. Mutually exclusive with the note title.",
           "name": "Recipe ID or slug"
         }
       },

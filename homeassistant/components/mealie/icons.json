@@ -48,6 +48,9 @@
     "get_shopping_list_items": {
       "service": "mdi:basket"
     },
+    "get_shopping_lists": {
+      "service": "mdi:format-list-bulleted"
+    },
     "import_recipe": {
       "service": "mdi:map-search"
     },
